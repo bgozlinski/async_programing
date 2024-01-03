@@ -5,10 +5,10 @@ import sys
 
 
 class ExchangeRateAPI:
-    async def get_exchange_rates(self, date):
+    async def get_exchange_rates(self, start_date, end_date):
         async with aiohttp.ClientSession() as session:
             try:
-                url = f'http://api.nbp.pl/api/exchangerates/tables/C/{date}/'
+                url = f'http://api.nbp.pl/api/exchangerates/tables/C/{start_date}/{end_date}/'
                 async with session.get(url) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -21,10 +21,15 @@ class ExchangeRateAPI:
 
     @staticmethod
     def parse_rates(data):
-        rates = {}
-        for rate in data[0]['rates']:
-            if rate['code'] in ['EUR', 'USD']:
-                rates[rate['code']] = {'buy': rate['bid'], 'sell': rate['ask']}
+        rates = []
+        for day_data in data:
+            date = day_data['effectiveDate']
+            day_rates = {}
+            for rate in day_data['rates']:
+                if rate['code'] in ['EUR', 'USD']:
+                    day_rates[rate['code']] = {'buy': rate['bid'], 'sell': rate['ask']}
+            if day_rates:
+                rates.append({date: day_rates})
         return rates
 
 
@@ -35,16 +40,10 @@ class ExchangeRateTool:
     async def get_rates_for_last_days(self, days):
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
-
-        tasks = []
-        for single_date in (start_date + timedelta(n) for n in range(days)):
-            formatted_date = single_date.strftime('%Y-%m-%d')
-            task = asyncio.create_task(self.api.get_exchange_rates(formatted_date))
-            tasks.append(task)
-
-        rates = await asyncio.gather(*tasks)
-
-        return [{(start_date + timedelta(n)).strftime('%d.%m.%Y'): rate} for n, rate in enumerate(rates) if rate]
+        formatted_start_date = start_date.strftime('%Y-%m-%d')
+        formatted_end_date = end_date.strftime('%Y-%m-%d')
+        rates = await self.api.get_exchange_rates(formatted_start_date, formatted_end_date)
+        return rates
 
 
 async def main(days):
